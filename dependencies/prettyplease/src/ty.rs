@@ -225,9 +225,21 @@ impl Printer {
     pub fn return_type(&mut self, ty: &ReturnType) {
         match ty {
             ReturnType::Default => {}
-            ReturnType::Type(_arrow, _, _, ty) => {
+            ReturnType::Type(_arrow, _, param_info, ty) => {
                 self.word(" -> ");
-                self.ty(ty);
+                match param_info {
+                    Some(param_info) => {
+                        let (_, pat, _) = *param_info.clone();
+                        self.word("(");
+                        self.pat(&pat);
+                        self.word(": ");
+                        self.ty(ty);
+                        self.word(")");
+                    }
+                    None => {
+                        self.ty(ty);
+                    }
+                }
             }
         }
     }
