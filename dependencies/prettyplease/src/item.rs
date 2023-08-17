@@ -3,11 +3,11 @@ use crate::iter::IterDelimited;
 use crate::INDENT;
 use proc_macro2::TokenStream;
 use syn_verus::{
-    Fields, FnArg, ForeignItem, ForeignItemFn, ForeignItemMacro, ForeignItemStatic,
+    Fields, FnArg, FnArgKind, FnMode, ForeignItem, ForeignItemFn, ForeignItemMacro, ForeignItemStatic,
     ForeignItemType, ImplItem, ImplItemConst, ImplItemMacro, ImplItemMethod, ImplItemType, Item,
     ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemForeignMod, ItemImpl, ItemMacro, ItemMacro2,
-    ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUnion, ItemUse,
-    Signature, Stmt, TraitItem, TraitItemConst, TraitItemMacro, TraitItemMethod, TraitItemType,
+    ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUnion, ItemUse, Pat,
+    Receiver, Signature, Stmt, Type, TraitItem, TraitItemConst, TraitItemMacro, TraitItemMethod, TraitItemType,
     UseGlob, UseGroup, UseName, UsePath, UseRename, UseTree,
 };
 
@@ -92,15 +92,66 @@ impl Printer {
         self.visibility(&item.vis);
         self.signature(&item.sig);
         self.where_clause_for_body(&item.sig.generics.where_clause);
-        self.word("{");
-        self.hardbreak_if_nonempty();
-        self.inner_attrs(&item.attrs);
-        for stmt in &item.block.stmts {
-            self.stmt(stmt);
+        
+
+        match &item.sig.requires {
+            Some(requires) => {
+                self.hardbreak();
+                self.word("requires ");
+                self.hardbreak();
+
+                for expr in requires.exprs.exprs.iter() {
+                    self.offset(INDENT);
+                    self.expr(expr);
+                    self.word(",");
+                    self.hardbreak();
+                }
+                //self.offset(-INDENT);
+                self.offset(-INDENT);
+            }
+            None => {}
         }
-        self.offset(-INDENT);
-        self.end();
-        self.word("}");
+
+        // if item.sig.recommends
+        
+        match &item.sig.ensures {
+            Some(ensures) => {
+                self.hardbreak();
+                self.word("ensures ");
+                self.hardbreak();
+
+                for expr in ensures.exprs.exprs.iter() {
+                    self.offset(INDENT);
+                    self.expr(expr);
+                    self.word(",");
+                    self.hardbreak();
+                }
+                //self.offset(-INDENT);
+                self.offset(-INDENT);
+            }
+            None => {}
+        }
+        
+        // TODO
+        // if item.sig.decreases
+
+        match &item.sig.mode {
+            FnMode::Spec(_) | FnMode::SpecChecked(_) if item.block.stmts.is_empty() => {
+                self.word(";");
+                self.end();
+            }
+            _ => {
+                self.word("{");
+                self.hardbreak_if_nonempty();
+                self.inner_attrs(&item.attrs);
+                for stmt in &item.block.stmts {
+                    self.stmt(stmt);
+                }
+                self.offset(-INDENT);
+                self.end();
+                self.word("}");
+            }
+        }
         self.hardbreak();
     }
 
@@ -753,13 +804,11 @@ impl Printer {
         self.hardbreak();
     }
 
-    fn maybe_variadic(&mut self, _arg: &FnArg) -> bool {
-        unimplemented!();
-        /*
-        let pat_type = match arg {
-            FnArg::Typed(pat_type) => pat_type,
-            FnArg::Receiver(receiver) => {
-                self.receiver(receiver);
+    fn maybe_variadic(&mut self, arg: &FnArg) -> bool {
+        let pat_type = match &arg.kind {
+            FnArgKind::Typed(pat_type) => pat_type,
+            FnArgKind::Receiver(receiver) => {
+                self.receiver(&receiver);
                 return false;
             }
         };
@@ -771,16 +820,15 @@ impl Printer {
                         self.outer_attrs(&pat_type.attrs);
                         self.word("...");
                     }
-                    _ => self.pat_type(pat_type),
+                    _ => self.pat_type(&pat_type),
                 }
                 true
             }
             _ => {
-                self.pat_type(pat_type);
+                self.pat_type(&pat_type);
                 false
             }
         }
-        */
     }
 
     fn signature(&mut self, signature: &Signature) {
@@ -795,6 +843,21 @@ impl Printer {
         }
         if let Some(abi) = &signature.abi {
             self.abi(abi);
+        }
+        match &signature.mode {
+            FnMode::Spec(_) => {
+                self.word("spec ");
+            }
+            FnMode::SpecChecked(_) => {
+                self.word("spec(checked) ")
+            }
+            FnMode::Proof(_) => {
+                self.word("proof ");
+            }
+            FnMode::Exec(_) => {
+                self.word("exec ");
+            }
+            FnMode::Default => {}
         }
         self.word("fn ");
         self.ident(&signature.ident);
@@ -824,7 +887,6 @@ impl Printer {
         self.end();
     }
 
-    /*
     fn receiver(&mut self, receiver: &Receiver) {
         self.outer_attrs(&receiver.attrs);
         if let Some((_ampersand, lifetime)) = &receiver.reference {
@@ -839,5 +901,4 @@ impl Printer {
         }
         self.word("self");
     }
-    */
 }
